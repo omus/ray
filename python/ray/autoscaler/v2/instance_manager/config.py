@@ -36,11 +36,17 @@ class NodeProviderConfig(object):
         )
 
     def get_node_config(self, instance_type_name: str) -> Dict[str, Any]:
+<<<<<<< HEAD
         return copy.deepcopy(
             self._node_configs["available_node_types"][instance_type_name][
                 "node_config"
             ]
         )
+=======
+        return self._node_configs["available_node_types"][instance_type_name][
+            "node_config"
+        ]
+>>>>>>> update
 
     def get_docker_config(self, instance_type_name: str) -> Dict[str, Any]:
         if "docker" not in self._node_configs:
