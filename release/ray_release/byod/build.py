@@ -94,19 +94,19 @@ def build_anyscale_byod_images(tests: List[Test]) -> None:
                 built.add(ray_image)
 
 
-def _download_dataplane_build_file() -> None:
+def _byod_image_exist(image_tag: str) -> bool:
     """
-    Downloads the dataplane build file from S3.
+    Checks if the given Anyscale BYOD image exists.
     """
-    s3 = boto3.client("s3")
-    s3.download_file(
-        Bucket=DATAPLANE_S3_BUCKET,
-        Key=DATAPLANE_FILENAME,
-        Filename=DATAPLANE_FILENAME,
-    )
-    with open(DATAPLANE_FILENAME, "rb") as build_context:
-        digest = hashlib.sha256(build_context.read()).hexdigest()
-        assert digest == DATAPLANE_DIGEST, "Mismatched dataplane digest found!"
+    client = boto3.client("ecr")
+    try:
+        client.describe_images(
+            repositoryName="anyscale",
+            imageIds=[{"imageTag": image_tag}],
+        )
+        return True
+    except client.exceptions.ImageNotFoundException:
+        return False
 
 
 def _ray_image_exist(ray_image: str) -> bool:
