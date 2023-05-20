@@ -88,46 +88,25 @@ def build_anyscale_byod_images(tests: List[Test]) -> None:
                     env=env,
                 )
                 subprocess.check_call(
-                    [
-                        "docker",
-                        "build",
-                        "--build-arg",
-                        f"BASE_IMAGE={byod_image}",
-                        "--build-arg",
-                        "PIP_REQUIREMENTS=requirements_byod.txt",
-                        "--build-arg",
-                        "DEBIAN_REQUIREMENTS=requirements_debian_byod.txt",
-                        "-t",
-                        byod_image,
-                        "-f",
-                        "byod.Dockerfile",
-                        os.join.path(RELEASE_PACKAGE_DIR, "ray_release/byod"),
-                        os.path.join(RELEASE_BYOD_DIR, "byod.Dockerfile"),
-                        RELEASE_BYOD_DIR,
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    env={"DOCKER_BUILDKIT": "1"},
-                )
-                subprocess.check_call(
                     ["docker", "push", byod_image],
                     stdout=sys.stderr,
                 )
                 built.add(ray_image)
 
 
-def _byod_image_exist(image_tag: str) -> bool:
+def _download_dataplane_build_file() -> None:
     """
-    Checks if the given Anyscale BYOD image exists.
+    Downloads the dataplane build file from S3.
     """
-    client = boto3.client("ecr")
-    try:
-        client.describe_images(
-            repositoryName="anyscale",
-            imageIds=[{"imageTag": image_tag}],
-        )
-        return True
-    except client.exceptions.ImageNotFoundException:
-        return False
+    s3 = boto3.client("s3")
+    s3.download_file(
+        Bucket=DATAPLANE_S3_BUCKET,
+        Key=DATAPLANE_FILENAME,
+        Filename=DATAPLANE_FILENAME,
+    )
+    with open(DATAPLANE_FILENAME, "rb") as build_context:
+        digest = hashlib.sha256(build_context.read()).hexdigest()
+        assert digest == DATAPLANE_DIGEST, "Mismatched dataplane digest found!"
 
 
 def _ray_image_exist(ray_image: str) -> bool:
