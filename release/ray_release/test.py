@@ -1,3 +1,4 @@
+import enum
 import os
 import json
 import time
@@ -23,6 +24,16 @@ DATAPLANE_ECR_REPO = "anyscale/ray"
 DATAPLANE_ECR_ML_REPO = "anyscale/ray-ml"
 
 
+class TestState(enum.Enum):
+    """
+    Overall state of the test
+    """
+
+    JAILED = "jailed"
+    FAILING = "failing"
+    PASSING = "passing"
+
+
 @dataclass
 class TestResult:
     status: ResultStatus
@@ -41,6 +52,12 @@ class TestResult:
             status=result["status"],
             timestamp=result["timestamp"],
         )
+
+    def is_failing(self) -> bool:
+        return not self.is_passing()
+
+    def is_passing(self) -> bool:
+        return self.status == ResultStatus.SUCCESS
 
 
 class Test(dict):
@@ -73,6 +90,18 @@ class Test(dict):
         Returns the name of the test.
         """
         return self["name"]
+
+    def get_state(self) -> TestState:
+        """
+        Returns the state of the test.
+        """
+        return TestState(self.get("state", TestState.GOOD.value))
+
+    def set_state(self, state: TestState) -> None:
+        """
+        Sets the state of the test.
+        """
+        self["state"] = state.value
 
     def get_python_version(self) -> str:
         """
@@ -151,11 +180,20 @@ class Test(dict):
         )[:limit]
         self["results"] = [test_result.__dict__ for test_result in test_results]
 
-    def get_test_results(self) -> List[TestResult]:
+    def get_test_results(self, sorted: bool = False) -> List[TestResult]:
         """
         Get test result from test object
         """
-        return [TestResult.from_dict(result) for result in self.get("results", [])]
+
+        def _get_latest_result(test_result: TestResult):
+            return test_result.timestamp
+
+        test_results = [
+            TestResult.from_dict(result) for result in self.get("results", [])
+        ]
+        if sorted:
+            return sorted(test_results, key=_get_latest_result, reverse=True)
+        return test_results
 
     def persist_to_s3(self) -> bool:
         """
