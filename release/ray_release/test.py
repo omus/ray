@@ -1,12 +1,46 @@
 import os
+import json
+import time
 from typing import Optional, List
+from dataclasses import dataclass
 
+import boto3
+from botocore.exceptions import ClientError
+
+from ray_release.result import (
+    ResultStatus,
+    Result,
+)
+from ray_release.logger import logger
+
+AWS_BUCKET = "ray-ci-results"
+AWS_KEY = "ray_tests"
 DEFAULT_PYTHON_VERSION = tuple(
     int(v) for v in os.environ.get("RELEASE_PY", "3.7").split(".")
 )
 DATAPLANE_ECR = "029272617770.dkr.ecr.us-west-2.amazonaws.com"
 DATAPLANE_ECR_REPO = "anyscale/ray"
 DATAPLANE_ECR_ML_REPO = "anyscale/ray-ml"
+
+
+@dataclass
+class TestResult:
+    status: ResultStatus
+    timestamp: int
+
+    @classmethod
+    def from_result(cls, result: Result):
+        return cls(
+            status=result.status,
+            timestamp=int(time.time() * 1000),
+        )
+
+    @classmethod
+    def from_dict(cls, result: dict):
+        return cls(
+            status=result["status"],
+            timestamp=result["timestamp"],
+        )
 
 
 class Test(dict):
@@ -81,6 +115,57 @@ class Test(dict):
         Returns the anyscale byod image to use for this test.
         """
         return f"{DATAPLANE_ECR}/{self.get_byod_repo()}:{self.get_byod_image_tag()}"
+
+    def update_from_s3(self) -> None:
+        """
+        Update test object with data field from s3
+        """
+        try:
+            data = (
+                boto3.client("s3")
+                .get_object(
+                    Bucket=AWS_BUCKET,
+                    Key=f"{AWS_KEY}/{self.get_name()}.json",
+                )
+                .get("Body")
+                .read()
+                .decode("utf-8")
+            )
+        except ClientError as e:
+            logger.warning(f"Failed to update data for {self.get_name()} from s3:  {e}")
+            return
+        self.update(json.loads(data))
+
+    def add_test_result(self, result: Result, limit: int = 10) -> None:
+        """
+        Add test result to test object
+        """
+
+        def _get_latest_result(test_result: TestResult):
+            return test_result.timestamp
+
+        test_results = sorted(
+            self.get_test_results() + [TestResult.from_result(result)],
+            key=_get_latest_result,
+            reverse=True,
+        )[:limit]
+        self["results"] = [test_result.__dict__ for test_result in test_results]
+
+    def get_test_results(self) -> List[TestResult]:
+        """
+        Get test result from test object
+        """
+        return [TestResult.from_dict(result) for result in self.get("results", [])]
+
+    def persist_to_s3(self) -> bool:
+        """
+        Persist test object to s3
+        """
+        boto3.client("s3").put_object(
+            Bucket=AWS_BUCKET,
+            Key=f"{AWS_KEY}/{self.get_name()}.json",
+            Body=json.dumps(self),
+        )
 
 
 class TestDefinition(dict):

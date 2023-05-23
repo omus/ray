@@ -1,9 +1,15 @@
 import sys
 import os
 import pytest
+from unittest import mock
 
+from ray_release.result import (
+    Result,
+    ResultStatus,
+)
 from ray_release.test import (
     Test,
+    TestResult,
     DATAPLANE_ECR,
     DATAPLANE_ECR_REPO,
     DATAPLANE_ECR_ML_REPO,
@@ -63,6 +69,19 @@ def test_get_anyscale_byod_image():
         ).get_anyscale_byod_image()
         == f"{DATAPLANE_ECR}/{DATAPLANE_ECR_ML_REPO}:123456-py38-gpu"
     )
+
+
+def test_add_test_result():
+    with mock.patch(
+        "time.time",
+        return_value=0,
+    ):
+        test = _stub_test({})
+        assert test.get_test_results() == []
+        test.add_test_result(Result(status=ResultStatus.SUCCESS))
+        assert test.get_test_results() == [
+            TestResult(status=ResultStatus.SUCCESS, timestamp=0)
+        ]
 
 
 if __name__ == "__main__":
